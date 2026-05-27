@@ -1,0 +1,29 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+import subprocess
+import os
+
+app = FastAPI()
+
+# Ye line Hostinger se aane wali request ko allow karegi
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/compress")
+async def compress_pdf(file: UploadFile = File(...)):
+    # 1. User ki file ko server par temporary save karo
+    with open("temp.pdf", "wb") as buffer:
+        buffer.write(await file.read())
+    
+    # 2. Ghostscript command chalao (asli compression engine)
+    # Ye command file ko compress karke 'out.pdf' bana degi
+    subprocess.run(["gs", "-sDEVICE=pdfwrite", "-dPDFSETTINGS=/ebook", 
+                    "-dNOPAUSE", "-dBATCH", "-sOutputFile=out.pdf", "temp.pdf"])
+    
+    # 3. Compress hui file wapas user ko bhej do
+    return FileResponse("out.pdf", media_type="application/pdf", filename="compressed.pdf")
