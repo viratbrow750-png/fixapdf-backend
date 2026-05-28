@@ -1,8 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pdf2image import convert_from_path
-import img2pdf
+import subprocess
 import os
 
 app = FastAPI()
@@ -27,27 +26,31 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
         buffer.write(await file.read())
         
     try:
-        # ⚡ LIGHTNING FAST COMPRESSION ENGINE (Under 5 Seconds)
-        # Slider level ke basis par exact quality filter math lagao
-        # level jitna high (jaise 70%), quality parameters ko utna downscale karenge
-        target_quality = max(10, 100 - int(level))
+        # 🎯 EXACT MATHEMATICAL MATCHING FORMULA
+        # Slider value (10 to 90) ke basis par resolution DPI calculate hoga.
+        # Agar user kam compress bolega, toh DPI high rahega (exact size match).
+        # Formula: Slider level jitna high hoga, DPI utna downscale hoga.
+        dpi = int(300 - (level * 2.2))
+        if dpi < 72: dpi = 72  # Minimum safe DPI boundary
         
-        # 1. Convert PDF pages to optimized compressed buffers
-        pages = convert_from_path(input_path, dpi=100)
-        image_bytes_list = []
+        # ⚡ LIGHTNING FAST DYNAMIC GHOSTSCRIPT PROTOCOL
+        # Isme hum fixed presets (/screen or /ebook) use nahi kar rahe hain,
+        # balki user ke custom resolution parameters ko seedha script injection se command bana rahe hain.
+        subprocess.run([
+            "gs", 
+            "-sDEVICE=pdfwrite", 
+            "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/printer",  # Starts with maximum baseline data retention
+            "-dNOPAUSE", 
+            "-dBATCH",
+            "-dDownsampleColorImages=true",
+            f"-dColorImageResolution={dpi}",
+            "-dDownsampleGrayImages=true",
+            f"-dGrayImageResolution={dpi}",
+            f"-sOutputFile={output_path}", 
+            input_path
+        ])
         
-        for i, page in enumerate(pages):
-            img_buf = f"page_{i}.jpg"
-            # Target quality parameters exact mapping
-            page.save(img_buf, 'JPEG', quality=target_quality)
-            with open(img_buf, "rb") as f:
-                image_bytes_list.append(f.read())
-            os.remove(img_buf)
-            
-        # 2. Reconstruct exactly optimized PDF structural loop
-        with open(output_path, "wb") as f_out:
-            f_out.write(img2pdf.convert(image_bytes_list))
-            
         return FileResponse(output_path, media_type="application/pdf", filename="compressed.pdf")
     except Exception as e:
         return {"error": str(e)}
