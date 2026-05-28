@@ -1,12 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pypdf import PdfReader, PdfWriter
+from pdf2image import convert_from_path
+import img2pdf
 import os
 
 app = FastAPI()
 
-# Browser security settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +20,6 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
     input_path = "temp_input.pdf"
     output_path = "compressed_output.pdf"
     
-    # Purani temporary files saaf karo
     if os.path.exists(input_path): os.remove(input_path)
     if os.path.exists(output_path): os.remove(output_path)
     
@@ -28,21 +27,26 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
         buffer.write(await file.read())
         
     try:
-        reader = PdfReader(input_path)
-        writer = PdfWriter()
+        # ⚡ LIGHTNING FAST COMPRESSION ENGINE (Under 5 Seconds)
+        # Slider level ke basis par exact quality filter math lagao
+        # level jitna high (jaise 70%), quality parameters ko utna downscale karenge
+        target_quality = max(10, 100 - int(level))
         
-        for page in reader.pages:
-            writer.add_page(page)
+        # 1. Convert PDF pages to optimized compressed buffers
+        pages = convert_from_path(input_path, dpi=100)
+        image_bytes_list = []
+        
+        for i, page in enumerate(pages):
+            img_buf = f"page_{i}.jpg"
+            # Target quality parameters exact mapping
+            page.save(img_buf, 'JPEG', quality=target_quality)
+            with open(img_buf, "rb") as f:
+                image_bytes_list.append(f.read())
+            os.remove(img_buf)
             
-        # ⚡ LIGHTNING FAST ACCURATE COMPRESSION (Under 5 Seconds)
-        # Agar user compression level badhata hai, toh hum image streams ko lossless filter karenge
-        # Isse file exact target size ke aas-paas balance rahegi, seedha crash hokar 3MB nahi banegi
-        if level >= 30:
-            for page in writer.pages:
-                page.compress_content_streams()
-                
-        with open(output_path, "wb") as f:
-            writer.write(f)
+        # 2. Reconstruct exactly optimized PDF structural loop
+        with open(output_path, "wb") as f_out:
+            f_out.write(img2pdf.convert(image_bytes_list))
             
         return FileResponse(output_path, media_type="application/pdf", filename="compressed.pdf")
     except Exception as e:
