@@ -1,12 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pypdf import PdfReader, PdfWriter
+import fitz  # PyMuPDF Core Engine
 import os
 
 app = FastAPI()
 
-# Browser security settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +19,6 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
     input_path = "temp_input.pdf"
     output_path = "compressed_output.pdf"
     
-    # Purani temporary files saaf karo
     if os.path.exists(input_path): os.remove(input_path)
     if os.path.exists(output_path): os.remove(output_path)
     
@@ -28,21 +26,29 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
         buffer.write(await file.read())
         
     try:
-        reader = PdfReader(input_path)
-        writer = PdfWriter()
+        doc = fitz.open(input_path)
         
-        for page in reader.pages:
-            writer.add_page(page)
-            
-        # ⚡ LIGHTNING FAST ACCURATE COMPRESSION (Under 5 Seconds)
-        # Agar user compression level badhata hai, toh hum image streams ko lossless filter karenge
-        # Isse file exact target size ke aas-paas balance rahegi, seedha crash hokar 3MB nahi banegi
-        if level >= 30:
-            for page in writer.pages:
-                page.compress_content_streams()
+        # Asli size-change logic: level jitna badhega, compression utna heavy hoga
+        # level=10 matlab original ke paas (90% quality), level=50 matlab safe balance (50% quality)
+        quality_factor = max(10, 100 - int(level))
+        
+        for page in doc:
+            for img in page.get_images(full=True):
+                xref = img[0]
+                pix = fitz.Pixmap(doc, xref)
                 
-        with open(output_path, "wb") as f:
-            writer.write(f)
+                # Squeezer engine running inside byte matrices
+                compressed_img_bytes = pix.tobytes("jpeg", quality=quality_factor)
+                doc.update_stream(xref, compressed_img_bytes)
+        
+        # Professional compression settings with absolute metadata optimization
+        doc.save(
+            output_path, 
+            garbage=4, 
+            deflate=True, 
+            clean=True
+        )
+        doc.close()
             
         return FileResponse(output_path, media_type="application/pdf", filename="compressed.pdf")
     except Exception as e:
