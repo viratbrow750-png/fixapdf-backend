@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-import fitz  # PyMuPDF Core Engine
+import fitz  # PyMuPDF
 import os
 
 app = FastAPI()
@@ -28,20 +28,31 @@ async def compress_pdf(file: UploadFile = File(...), level: int = Form(50)):
     try:
         doc = fitz.open(input_path)
         
-        # Asli size-change logic: level jitna badhega, compression utna heavy hoga
-        # level=10 matlab original ke paas (90% quality), level=50 matlab safe balance (50% quality)
+        # level ke mutabik image quality set hogi (bina crash kiye)
         quality_factor = max(10, 100 - int(level))
         
         for page in doc:
-            for img in page.get_images(full=True):
-                xref = img[0]
-                pix = fitz.Pixmap(doc, xref)
+            # Page ki saari images ki list nikaalo
+            image_list = page.get_images(full=True)
+            
+            for img_info in image_list:
+                xref = img_info[0]
                 
-                # Squeezer engine running inside byte matrices
-                compressed_img_bytes = pix.tobytes("jpeg", quality=quality_factor)
-                doc.update_stream(xref, compressed_img_bytes)
+                # Image ka exact position (rect) pata karo page par
+                rects = page.get_image_rects(xref)
+                if not rects:
+                    continue
+                rect = rects[0] # Pehla bbox location
+                
+                # Pixmap nikaalo aur use low-quality JPEG bytes mein convert karo
+                pix = fitz.Pixmap(doc, xref)
+                compressed_bytes = pix.tobytes("jpeg", quality=quality_factor)
+                
+                # Purani heavy image ko page se delete karo aur nayi compressed image usi jagah chipkao
+                page.delete_image(xref)
+                page.insert_image(rect, stream=compressed_bytes)
         
-        # Professional compression settings with absolute metadata optimization
+        # Ab ekdum tightly pack karke save karo (bina crash hue chota size milega)
         doc.save(
             output_path, 
             garbage=4, 
